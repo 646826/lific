@@ -48,6 +48,7 @@
 //! with `--stdio` and `--key`.
 
 pub mod clients;
+pub mod config_only;
 pub mod writer;
 
 use std::io::IsTerminal;
@@ -819,6 +820,7 @@ fn print_json(result: &ConnectResult) {
         })
         .collect();
     let out = serde_json::json!({
+        "schema_version": 1,
         "clients": clients,
         // Top-level key is always null now — keys live per-client above.
         "key": serde_json::Value::Null,

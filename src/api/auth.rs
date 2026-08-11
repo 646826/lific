@@ -625,6 +625,17 @@ pub(super) struct CreateBotRequest {
     tool: String,
 }
 
+fn connected_tool_display(tool: &str) -> Option<&'static str> {
+    crate::cli::connect::clients::find_client(tool)
+        .map(|spec| spec.display)
+        .or(match tool {
+            // Compatibility aliases created by older Connected Tools versions.
+            "claude" => Some("Claude Desktop"),
+            "pi" => Some("Pi"),
+            _ => None,
+        })
+}
+
 pub(super) async fn create_bot(
     State(db): State<DbPool>,
     Extension(auth_user): Extension<Option<AuthUser>>,
@@ -634,17 +645,8 @@ pub(super) async fn create_bot(
     let user = auth_user.ok_or_else(|| LificError::BadRequest("authentication required".into()))?;
 
     let tool = input.tool.trim().to_lowercase();
-    let display_name = match tool.as_str() {
-        "opencode" => "OpenCode",
-        "cursor" => "Cursor",
-        "claude-code" => "Claude Code",
-        "claude" => "Claude Desktop",
-        "codex" => "Codex",
-        "pi" => "Pi",
-        "vscode" => "VS Code",
-        "zed" => "Zed",
-        _ => return Err(LificError::BadRequest(format!("unknown tool: {tool}"))),
-    };
+    let display_name = connected_tool_display(&tool)
+        .ok_or_else(|| LificError::BadRequest(format!("unknown tool: {tool}")))?;
 
     let bot_username = format!("{tool}-{}", user.username);
 
@@ -754,6 +756,21 @@ pub(super) async fn list_users(
 mod tests {
     use crate::api::test_helpers::*;
     use axum::http::StatusCode;
+
+    #[test]
+    fn connected_tools_share_connect_registry() {
+        for id in crate::cli::connect::clients::all_client_ids() {
+            assert!(
+                super::connected_tool_display(id).is_some(),
+                "connected tools must accept canonical connect client {id}"
+            );
+        }
+        assert_eq!(
+            super::connected_tool_display("claude"),
+            Some("Claude Desktop"),
+            "legacy Connected Tools ids remain compatible"
+        );
+    }
 
     // LIF-207: the Secure attribute is gated; everything else stays constant.
     #[test]
@@ -965,7 +982,7 @@ mod tests {
             "/api/instance/settings",
             serde_json::json!({ "authz_enforced": true }),
         )
-            .await;
+        .await;
         assert_eq!(patch.status(), StatusCode::OK);
         assert_eq!(parse_json(patch).await["authz_enforced"], true);
 
@@ -1047,8 +1064,8 @@ mod tests {
                 "/api/instance/settings",
                 serde_json::json!({ "allow_signup": true })
             )
-                .await
-                .status(),
+            .await
+            .status(),
             StatusCode::FORBIDDEN
         );
     }
