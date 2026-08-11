@@ -44,6 +44,24 @@ Writes are merge-preserving. Unrelated keys and sibling MCP server entries remai
 
 Re-running `lific connect` is safe. It replaces the `lific` entry with current values and rotates the API key for that client.
 
+## External orchestrators and config-only mode
+
+An orchestrator can provision one scoped bot through `POST /api/auth/bots`,
+then let the Lific binary installed beside the client merge only that client's
+native configuration. This mode does not require a local database and does not
+mint or rotate credentials:
+
+```bash
+export LIFIC_CONNECT_KEY="<SCOPED-BOT-KEY>"
+lific --json connect --config-only --key-env LIFIC_CONNECT_KEY \
+  --url https://lific.example/mcp --client codex --scope global \
+  --yes --skip-agents
+```
+
+`--dry-run` uses a fixed placeholder and never reads or echoes the supplied
+credential. Use `lific agents-md` separately when repository mutation is
+intended.
+
 ## Non-interactive use
 
 Pass `--client` (repeatable) and `--yes` to skip all prompts. This is the form for scripts and agents.

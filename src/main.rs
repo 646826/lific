@@ -1207,10 +1207,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             oauth,
             url,
             key,
+            key_env,
             user,
             yes,
             dry_run,
             skip_agents,
+            config_only,
         } => {
             let json = cli::term::wants_json(cli.json);
             let scope = match scope.as_str() {
@@ -1224,11 +1226,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
 
+            let key = match (key, key_env) {
+                (Some(_), Some(_)) => return Err("use either --key or --key-env, not both".into()),
+                (Some(value), None) => Some(value),
+                (None, Some(name)) => {
+                    let value = std::env::var(&name).map_err(|_| {
+                        format!("--key-env named '{name}', but that variable is not set")
+                    })?;
+                    if value.is_empty() {
+                        return Err(format!("--key-env named '{name}', but that variable is empty").into());
+                    }
+                    Some(value)
+                }
+                (None, None) => None,
+            };
+
             let base = cli::connect::production_base()?;
-            // Refuse to conjure a fresh database in whatever directory this
-            // happens to run from — connect targets an EXISTING instance.
-            cli::connect::ensure_instance_exists(&cfg)?;
-            let pool = db::open(&cfg.database.path)?;
             actor::set_default_transport(actor::Transport::Cli);
 
             let args = cli::connect::ConnectArgs {
@@ -1257,7 +1270,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ))
                 ));
             }
-            let result = match cli::connect::run(&args, &cfg, &pool, &base) {
+            let result = if config_only {
+                cli::connect::config_only::run(&args, &cfg, &base)
+            } else {
+                // Normal connect still targets an existing local instance.
+                cli::connect::ensure_instance_exists(&cfg)?;
+                let pool = db::open(&cfg.database.path)?;
+                cli::connect::run(&args, &cfg, &pool, &base)
+            };
+            let result = match result {
                 Ok(r) => r,
                 Err(e) => {
                     // Close the clack session cleanly instead of leaving a
